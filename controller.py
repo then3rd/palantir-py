@@ -3,8 +3,8 @@ from threading import Thread
 import socketserver
 import serial
 
+''' Thread for controlling, reading, and writing to a serial device '''
 class SerialWorker(Thread):
-    '''Threaded Serial Port Device Controller'''
     def __init__(self, device, baud, x_range=120, y_range=90, quality=1, direction='lrud'):
         super(SerialWorker, self).__init__()
         self.daemon = True
@@ -52,8 +52,8 @@ class SerialWorker(Thread):
         return self.ser.isOpen()
 
     def serialConnect(self):
-        print('-->Opening Serial Port: {}'.format(self.device))
         try:
+            print('Opening Serial Port: {}'.format(self.device))
             self.ser = serial.Serial( # set parameters, in fact use your own :-)
                 port=self.device,
                 baudrate=self.baud,
@@ -62,7 +62,7 @@ class SerialWorker(Thread):
                 # stopbits=serial.STOPBITS_ONE
             )
             if self.ser.isOpen():
-                print("...port is opened")
+                print("port is opened")
             else:
                 raise Exception('Port not opened')
         except IOError as err: # if port is already opened, close it and open it again and print message
@@ -74,6 +74,7 @@ class SerialWorker(Thread):
             return False
         return
 
+''' Thread controlling SocketServer '''
 class ServerWorker(Thread):
     def __init__(self, address):
         super(ServerWorker, self).__init__()
