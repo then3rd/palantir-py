@@ -10,21 +10,21 @@ Step 1x (axis, distance, direction) ok -> sample(time, count)
 120 * 
 
 """
-# import os
 import sys
 import argparse
-import socketserver
-from controller import MyTCPHandler
-from controller import Controller
-
+# from queue import Queue
+import time
+from controller import SerialWorker
+from controller import ServerWorker
 
 def main(arguments):
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-d', '--device', help='Machine serial device', required=True)
-    parser.add_argument('-b', '--baud', help='Baud Rate', required=True)
-    parser.add_argument('-p', '--port', help='server port', required=False)
+    parser.add_argument('--device', help='Machine serial device', required=True)
+    parser.add_argument('--baud', help='Baud Rate', required=True)
+    parser.add_argument('--host', help='server host', required=False)
+    parser.add_argument('--port', help='server port', required=False)
 
     # parser.add_argument('infile', help="Input file", type=argparse.FileType('r'))
     # parser.add_argument('-o', '--outfile', help="Output file",
@@ -33,16 +33,33 @@ def main(arguments):
     args = parser.parse_args(arguments)
     print(args)
 
-    if args.device:
-        antenna = Controller(args.device, args.baud)
-        antenna.serialConnect()
-
     if args.port:
-        server_address = ('localhost', int(args.port))
-        server = socketserver.TCPServer(server_address, MyTCPHandler)
-        print('Starting webserver', server_address)
-        server.serve_forever()
+        address = (str(args.host), int(args.port))
+        server = ServerWorker(address)
+        server.start()
 
+    if args.device:
+        # queue = Queue()
+        antenna = SerialWorker(args.device, args.baud)
+        antenna.serialConnect()
+        antenna.start()
+
+        antenna.write("$X\n".encode())
+
+    while True:
+        time.sleep(1)
+        print('.', end='', flush=True)
+
+        # Stream g-code
+        # for line in f:
+        #     l = removeComment(line)
+        #     l = l.strip() # Strip all EOL characters for streaming
+        #     if  (l.isspace()==False and len(l)>0) :
+        #         print('Sending: ' + l)
+        #         s.write(l + '\n') # Send g-code block
+        #         grbl_out = s.readline() # Wait for response with carriage return
+        #         print(' : ' + grbl_out.strip())
+        # s.close()
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
