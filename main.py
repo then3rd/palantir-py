@@ -58,7 +58,7 @@ def main(arguments):
 
         antenna.write("$X\n".encode())
 
-        routine = DeviceWorker()
+        routine = DeviceWorker(x_range=130)
         routine.start()
 
     while True:

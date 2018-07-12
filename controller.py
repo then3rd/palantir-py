@@ -1,5 +1,6 @@
 """ Classes for controlling various aspects of a cancer-emitting robot """
 from threading import Thread
+from fractions import Fraction
 import socketserver
 import time
 import logging
@@ -7,16 +8,32 @@ import serial
 
 ''' Thread controlling device motion (and data capture?) '''
 class DeviceWorker(Thread):
-    def __init__(self, x_range=120, y_range=90, quality=1, direction='lrud'):
+    def __init__(self, x_range=0, y_range=0, ratio=(4,3), quality=4, order=('y','x')):
         super().__init__()
         self.name = 'DeviceWorker'
         self.daemon = False
         self.cancelled = False
 
-        self.x_range = x_range
-        self.y_range = y_range
+        self.ratio = Fraction(*ratio)
+        self.range = {
+            'x': x_range if x_range != 0 else y_range / self.ratio,
+            'y': y_range if y_range != 0 else x_range / self.ratio
+        }
+        self.step_size = {
+            'x': Fraction(self.range['x'] / ratio[0]),
+            'y': Fraction(self.range['y'] / ratio[1])
+        }
+
         self.quality = quality
-        self.direction = direction
+        self.order = order
+
+        self.x_min = 0
+        self.y_min = 0
+
+        logging.info('ratio: %s -> %s', self.ratio, round(float(self.ratio), 4))
+        logging.info('x_range: %s -> %s', self.range['x'], round(float(self.range['x']), 4))
+        logging.info('y_range: %s -> %s', self.range['y'], round(float(self.range['y']), 4))
+        logging.info('step_size: x: %s, y: %s', self.step_size['x'], self.step_size['y'])
 
     def run(self):
         while not self.cancelled:
@@ -31,6 +48,9 @@ class DeviceWorker(Thread):
         pass
 
     def begin_routine(self):
+        pass
+
+    def step_axis(self, axit, distance, direction):
         pass
 
 ''' Thread for controlling, reading, and writing to a serial device '''
