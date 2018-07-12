@@ -84,38 +84,35 @@ class ServerWorker(Thread):
 
     def run(self):
         print('Starting webserver', self.address)
-        server = socketserver.TCPServer(self.address, MyTCPHandler)
-        server.serve_forever()
+        try:
+            server = socketserver.TCPServer(self.address, MyTCPHandler)
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            print('exiting!')
+            server.server_close()
+        except OSError as err:
+            print(err)
 
     def cancel(self):
         self.cancelled = True
 
+''' Handler for incoming TCP Connections '''
 class MyTCPHandler(socketserver.BaseRequestHandler):
-    """
-    The RequestHandler class for our server.
-    It is instantiated once per connection to the server, and must
-    override the handle() method to implement communication to the
-    client.
-    """
+
+    def setup(self):
+        print('{}:{} connected'.format(*self.client_address))
+        return socketserver.BaseRequestHandler.setup(self)
 
     def handle(self):
-        # self.request is the TCP socket connected to the client
-        self.data = self.request.recv(1024).strip()
-        print("{} wrote:".format(self.client_address[0]))
-        # Print decoded data
-        print(self.data.decode('ascii'))
-        # just send back the same data, but upper-cased
-        self.request.sendall(self.data.upper())
-        return
+        while True:
+            data = self.request.recv(1024)
+            if not data:
+                break
+            send = data.strip().upper()
+            self.request.sendall(send)
 
-    # def setup(self):
-    #     print('--incoming--');
-    #     return socketserver.BaseRequestHandler.setup(self)
-
-    # def finish(self):
-    #     print('--done--');
-    #     return socketserver.BaseRequestHandler.finish(self)
-
-# G91 ; use relative positioning for the XYZ axes
-# G1 X10 F3600 ; move 10mm to the right of the current location
-# G1 X10 F3600 ; move another 10mm to the right
+    def finish(self):
+        print('{}:{} disconnected'.format(*self.client_address))
+        return socketserver.BaseRequestHandler.finish(self)

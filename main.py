@@ -9,6 +9,9 @@ Step 1x (axis, distance, direction) ok -> sample(time, count)
 (360/(200step * 8microstep * 5:1 ratio)) * quality_multiplier = accuracy
 120 * 
 
+# G91 ; use relative positioning for the XYZ axes
+# G1 X10 F3600 ; move 10mm to the right of the current location
+# G1 X10 F3600 ; move another 10mm to the right
 """
 import sys
 import argparse
