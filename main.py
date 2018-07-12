@@ -7,7 +7,6 @@ Step 1x (axis, distance, direction) ok -> sample(time, count)
      no: goto step 1x
 
 (360/(200step * 8microstep * 5:1 ratio)) * quality_multiplier = accuracy
-120 * 
 
 # G91 ; use relative positioning for the XYZ axes
 # G1 X10 F3600 ; move 10mm to the right of the current location
@@ -15,10 +14,12 @@ Step 1x (axis, distance, direction) ok -> sample(time, count)
 """
 import sys
 import argparse
+import logging
 # from queue import Queue
 import time
 from controller import SerialWorker
 from controller import ServerWorker
+from controller import DeviceWorker
 
 def main(arguments):
     parser = argparse.ArgumentParser(
@@ -28,13 +29,21 @@ def main(arguments):
     parser.add_argument('--baud', help='Baud Rate', required=True)
     parser.add_argument('--host', help='server host', required=False)
     parser.add_argument('--port', help='server port', required=False)
+    parser.add_argument('--log', help='log level', required=False)
+
 
     # parser.add_argument('infile', help="Input file", type=argparse.FileType('r'))
     # parser.add_argument('-o', '--outfile', help="Output file",
     #                     default=sys.stdout, type=argparse.FileType('w'))
 
     args = parser.parse_args(arguments)
-    print(args)
+
+    loglevel = args.log if args.log else logging.DEBUG
+    logging.basicConfig(
+        level=loglevel,
+        format='(%(threadName)-9s) %(message)s'
+        )
+
 
     if args.port:
         address = (str(args.host), int(args.port))
@@ -44,10 +53,13 @@ def main(arguments):
     if args.device:
         # queue = Queue()
         antenna = SerialWorker(args.device, args.baud)
-        antenna.serialConnect()
+        antenna.serial_connect()
         antenna.start()
 
         antenna.write("$X\n".encode())
+
+        routine = DeviceWorker()
+        routine.start()
 
     while True:
         time.sleep(1)
