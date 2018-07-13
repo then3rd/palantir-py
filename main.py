@@ -1,11 +1,5 @@
 #!venv/bin/python3
 """
-start -> home -> gotoStartPosition
-Step 1x (axis, distance, direction) ok -> sample(time, count)
-[Axis at max distance? ](yes, no)
-     yes: step other axis x1 -> toggle axis direction ->goto step 1x
-     no: goto step 1x
-
 (360/(200step * 8microstep * 5:1 ratio)) * quality_multiplier = accuracy
 
 # G91 ; use relative positioning for the XYZ axes
@@ -15,11 +9,9 @@ Step 1x (axis, distance, direction) ok -> sample(time, count)
 import sys
 import argparse
 import logging
-# from queue import Queue
+from queue import Queue
 import time
-from controller import SerialWorker
-from controller import ServerWorker
-from controller import DeviceWorker
+from controller import SerialWorker, ServerWorker, DeviceWorker
 
 def main(arguments):
     parser = argparse.ArgumentParser(
@@ -41,9 +33,7 @@ def main(arguments):
     loglevel = args.log if args.log else logging.DEBUG
     logging.basicConfig(
         level=loglevel,
-        format='(%(threadName)-9s) %(message)s'
-        )
-
+        format='(%(threadName)-9s) %(message)s')
 
     if args.port:
         address = (str(args.host), int(args.port))
@@ -51,30 +41,28 @@ def main(arguments):
         server.start()
 
     if args.device:
-        # queue = Queue()
-        antenna = SerialWorker(args.device, args.baud)
-        antenna.serial_connect()
-        antenna.start()
+        # Start SerialWorker queue and thread
+        q_serial_in = Queue()
+        serial_worker = SerialWorker(q_serial_in, args.device, args.baud)
+        serial_worker.start()
 
-        antenna.write("$X\n".encode())
+        # Start DeviceWorker thread
+        device_worker = DeviceWorker(q_serial_in, x_range=130)
+        device_worker.start()
 
-        routine = DeviceWorker(x_range=130)
-        routine.start()
+        # Join queue
+        q_serial_in.join()
+
+        # Initialize serial connection
+        serial_worker.activate()
+        serial_worker.write("$X\n".encode())
+
+        ## Begin main Routine
+        time.sleep(3)
+        device_worker.activate()
 
     while True:
-        time.sleep(1)
-        print('.', end='', flush=True)
-
-        # Stream g-code
-        # for line in f:
-        #     l = removeComment(line)
-        #     l = l.strip() # Strip all EOL characters for streaming
-        #     if  (l.isspace()==False and len(l)>0) :
-        #         print('Sending: ' + l)
-        #         s.write(l + '\n') # Send g-code block
-        #         grbl_out = s.readline() # Wait for response with carriage return
-        #         print(' : ' + grbl_out.strip())
-        # s.close()
+        time.sleep(0.1)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
