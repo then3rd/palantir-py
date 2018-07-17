@@ -21,6 +21,7 @@ def main(arguments):
     parser.add_argument('--baud', help='Baud Rate', required=True)
     parser.add_argument('--host', help='server host', required=False)
     parser.add_argument('--port', help='server port', required=False)
+    parser.add_argument('--simulate', action='store_true', required=False)
     parser.add_argument('--log', help='log level', required=False)
 
 
@@ -43,11 +44,11 @@ def main(arguments):
     if args.device:
         # Start SerialWorker queue and thread
         q_serial_in = Queue()
-        serial_worker = SerialWorker(q_serial_in, args.device, args.baud)
+        serial_worker = SerialWorker(args, q_serial_in, args.device, args.baud)
         serial_worker.start()
 
         # Start DeviceWorker thread
-        device_worker = DeviceWorker(q_serial_in, x_range=130)
+        device_worker = DeviceWorker(q_serial_in, x_range=120)
         device_worker.start()
 
         # Join queue

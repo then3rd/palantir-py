@@ -16,24 +16,28 @@ class DeviceWorker(Thread):
         self.active = False
         self.cancelled = False
 
-        self.ratio = Fraction(*ratio)
-        self.range = {
-            'x': x_range if x_range != 0 else y_range / self.ratio,
-            'y': y_range if y_range != 0 else x_range / self.ratio}
-        self.step_size = {
-            'x': Fraction(self.range['x'] / ratio[0]),
-            'y': Fraction(self.range['y'] / ratio[1])}
-
         self.quality = quality
         self.order = order
 
-        self.x_min = 0
-        self.y_min = 0
+        self.ratio = Fraction(*ratio)
+        self.range_min = {'x': 0, 'y': 0}
+        self.range_max = {
+            'x': x_range if x_range != 0 else y_range / self.ratio,
+            'y': y_range if y_range != 0 else x_range / self.ratio}
+        self.quality_divide = {
+            'x': ratio[0] * self.quality,
+            'y': ratio[1] * self.quality}
+        self.step_size = {
+            'x': Fraction(self.range_max['x'] / self.quality_divide['x']),
+            'y': Fraction(self.range_max['y'] / self.quality_divide['y'])}
+        self.cur_pos = {'x': 0, 'y': 0}
+        self.cur_dir = {'x': 1, 'y': 1}
 
         logging.info('ratio: %s -> %s', self.ratio, round(float(self.ratio), 4))
-        logging.info('x_range: %s -> %s', self.range['x'], round(float(self.range['x']), 4))
-        logging.info('y_range: %s -> %s', self.range['y'], round(float(self.range['y']), 4))
+        logging.info('x_range: %s -> %s', self.range_max['x'], round(float(self.range_max['x']), 4))
+        logging.info('y_range: %s -> %s', self.range_max['y'], round(float(self.range_max['y']), 4))
         logging.info('step_size: x: %s, y: %s', self.step_size['x'], self.step_size['y'])
+        logging.info('num_points: %s', (self.quality_divide['x'] + 1) * (self.quality_divide['y'] + 1))
 
     ''' The actual algorithm that moves things around
     start -> home -> gotoStartPosition
@@ -44,16 +48,47 @@ class DeviceWorker(Thread):
     '''
     def run(self):
         while not self.cancelled:
+            init = True
+            path_end = False
+            complete = False
+            count = 0
             while self.active:
-                gcode = Gcode(['G1', -1.1111, 2.222, 3.333]).code
-                # gcode = Gcode(['$', None, None, None]).code()
-                self.q_serial_in.put(gcode)
-                logging.debug('put: \'%s\'', gcode)
-                time.sleep(10)
+                if complete:
+                    logging.debug('Complete! Sampled %s points.', count)
+                    self.active = False
+                    break
+                # Do hackrf sampling here
+                logging.debug('Sampling at %s, %s, %s...', round(float(self.cur_pos['x']), 4), round(float(self.cur_pos['y']), 4), round(float(self.cur_dir['y']), 4))
+                # The first loop is special, don't do these things
+                if init is False:
+                    if self.cur_pos['y'] == self.range_max['y'] and self.cur_pos['x'] == self.range_max['x']:
+                        complete = True
+                    elif self.cur_pos['y'] == self.range_min['y'] and self.cur_dir['y'] != 1:
+                        self.cur_dir['y'] = 1
+                        path_end = True
+                    elif self.cur_pos['y'] == self.range_max['y'] and self.cur_dir['y'] != -1:
+                        self.cur_dir['y'] = -1
+                        path_end = True
+                # Incriment the secondary axis when at the end
+                if path_end:
+                    self.cur_pos['x'] += self.step_size['x'] * self.cur_dir['x']
+                    path_end = False
+                # Incriment the primary axis
+                elif complete is not True:
+                    self.cur_pos['y'] += self.step_size['y'] * self.cur_dir['y']
+                    path_end = False
+                # Create gcode with current positions
+                gcode = Gcode(['G1', self.cur_pos['x'], self.cur_pos['y'], 10])
+                self.gcode_exec(gcode)
+                count += 1
+                time.sleep(0.1)
+                if init != False:
+                    init = False
 
     def gcode_exec(self, gcode):
         # Place gcode into queue to be executed by SerialWorker
-        self.q_serial_in.put(gcode.code())
+        logging.debug('put: \'%s\'', gcode.code)
+        self.q_serial_in.put(gcode.code)
 
     def cancel(self):
         self.cancelled = True
@@ -69,13 +104,14 @@ class DeviceWorker(Thread):
 
 ''' Thread for controlling, reading, and writing to a serial device '''
 class SerialWorker(Thread):
-    def __init__(self, q_serial_in, device, baud):
+    def __init__(self, args, q_serial_in, device, baud):
         super().__init__()
         self.name = __class__.__name__
         self.q_serial_in = q_serial_in
         self.daemon = True
         self.cancelled = False
 
+        self.args = args
         self.device = device
         self.baud = baud
 
@@ -89,8 +125,11 @@ class SerialWorker(Thread):
                 # Check if there is anything in the queue; blocking makes this unreliable?
                 if self.q_serial_in.qsize() > 0:
                     gcode = self.q_serial_in.get(block=False)
-                    logging.info('gcode: %s', gcode)
-                    self.ser.write('{}\n'.format(gcode).encode())
+                    logging.info('get: %s', gcode)
+                    if self.args.simulate:
+                        logging.info('write -> %s', gcode)
+                    else:
+                        self.ser.write('{}\n'.format(gcode).encode())
                     self.q_serial_in.task_done()
                 # check for response with carriage return
                 grbl_out = self.ser.readline()
@@ -195,12 +234,12 @@ class Gcode():
     def gencode(self):
         gcode_a = []
         gcode_a.append(self.cmd)
-        if self.x_dist:
-            gcode_a.append('X{}'.format(self.x_dist))
-        if self.y_dist:
-            gcode_a.append('Y{}'.format(self.y_dist))
-        if self.feed:
-            gcode_a.append('F{}'.format(self.feed))
+        if self.x_dist is not None:
+            gcode_a.append('X{}'.format(round(float(self.x_dist), 4)))
+        if self.y_dist is not None:
+            gcode_a.append('Y{}'.format(round(float(self.y_dist), 4)))
+        if self.feed is not None:
+            gcode_a.append('F{}'.format(round(float(self.feed), 4)))
         self.gcode = ' '.join(gcode_a)
 
     @property
