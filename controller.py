@@ -37,7 +37,7 @@ class DeviceWorker(Thread):
         logging.info('x_range: %s -> %s', self.range_max['x'], round(float(self.range_max['x']), 4))
         logging.info('y_range: %s -> %s', self.range_max['y'], round(float(self.range_max['y']), 4))
         logging.info('step_size: x: %s, y: %s', self.step_size['x'], self.step_size['y'])
-        logging.info('num_points: %s', (self.quality_divide['x'] + 1) * (self.quality_divide['y'] + 1))
+        logging.info('num_points:(%s+1 * %s+1) %s', self.quality_divide['x'], self.quality_divide['y'], (self.quality_divide['x'] + 1) * (self.quality_divide['y'] + 1))
 
     ''' The actual algorithm that moves things around
     start -> home -> gotoStartPosition
@@ -55,6 +55,7 @@ class DeviceWorker(Thread):
             while self.active:
                 if complete:
                     logging.debug('Complete! Sampled %s points.', count)
+                    self.gcode_exec(Gcode(['G1', 0, 0, 4000]))
                     self.active = False
                     break
                 # Do hackrf sampling here
@@ -78,10 +79,10 @@ class DeviceWorker(Thread):
                     self.cur_pos['y'] += self.step_size['y'] * self.cur_dir['y']
                     path_end = False
                 # Create gcode with current positions
-                gcode = Gcode(['G1', self.cur_pos['x'], self.cur_pos['y'], 10])
+                gcode = Gcode(['G1', self.cur_pos['x'], self.cur_pos['y'], 6000])
                 self.gcode_exec(gcode)
                 count += 1
-                time.sleep(0.1)
+                time.sleep(1.5)
                 if init != False:
                     init = False
 
