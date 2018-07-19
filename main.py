@@ -48,7 +48,7 @@ def main(arguments):
         serial_worker.start()
 
         # Start DeviceWorker thread
-        device_worker = DeviceWorker(q_serial_in, x_range=90, ratio=(8, 2), quality=16)
+        device_worker = DeviceWorker(q_serial_in, x_range=90, ratio=(4, 3), quality=1, order=('x', 'y'))
         device_worker.start()
 
         # Join queue

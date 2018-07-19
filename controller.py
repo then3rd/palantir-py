@@ -52,6 +52,8 @@ class DeviceWorker(Thread):
             path_end = False
             complete = False
             count = 0
+            pri = self.order[0]
+            sec = self.order[1]
             while self.active:
                 if complete:
                     logging.debug('Complete! Sampled %s points.', count)
@@ -62,24 +64,27 @@ class DeviceWorker(Thread):
                 logging.debug('Sampling at %s, %s, %s...', round(float(self.cur_pos['x']), 4), round(float(self.cur_pos['y']), 4), round(float(self.cur_dir['y']), 4))
                 # The first loop is special, don't do these things
                 if init is False:
-                    if self.cur_pos['y'] == self.range_max['y'] and self.cur_pos['x'] == self.range_max['x']:
+                    if self.cur_pos[pri] == self.range_max[pri] and self.cur_pos[sec] == self.range_max[sec]:
                         complete = True
-                    elif self.cur_pos['y'] == self.range_min['y'] and self.cur_dir['y'] != 1:
-                        self.cur_dir['y'] = 1
+                    elif self.cur_pos[pri] == self.range_min[pri] and self.cur_dir[pri] != 1:
+                        self.cur_dir[pri] = 1
                         path_end = True
-                    elif self.cur_pos['y'] == self.range_max['y'] and self.cur_dir['y'] != -1:
-                        self.cur_dir['y'] = -1
+                    elif self.cur_pos[pri] == self.range_max[pri] and self.cur_dir[pri] != -1:
+                        self.cur_dir[pri] = -1
                         path_end = True
                 # Incriment the secondary axis when at the end
                 if path_end:
-                    self.cur_pos['x'] += self.step_size['x'] * self.cur_dir['x']
+                    self.cur_pos[sec] += self.step_size[sec] * self.cur_dir[sec]
                     path_end = False
                 # Incriment the primary axis
                 elif complete is not True:
-                    self.cur_pos['y'] += self.step_size['y'] * self.cur_dir['y']
+                    self.cur_pos[pri] += self.step_size[pri] * self.cur_dir[pri]
                     path_end = False
                 # Create gcode with current positions
-                gcode = Gcode(['G1', self.cur_pos['x'], self.cur_pos['y'], 6000])
+                if pri == 'y':
+                    gcode = Gcode(['G1', self.cur_pos[sec], self.cur_pos[pri], 6000])
+                if pri == 'x':
+                    gcode = Gcode(['G1', self.cur_pos[pri], self.cur_pos[sec], 6000])
                 self.gcode_exec(gcode)
                 count += 1
                 time.sleep(1.5)
@@ -151,28 +156,33 @@ class SerialWorker(Thread):
         self.ser.flushInput()
 
     def write(self, data_in):
-        self.ser.write(data_in)
+        if not self.args.simulate:
+            self.ser.write(data_in)
 
     def serial_status(self):
         return self.ser.isOpen()
 
     def activate(self):
-        try:
+        if not self.args.simulate:
+            try:
+                logging.info('Opening Serial Port: %s', self.device)
+                self.ser = serial.Serial(
+                    timeout=0, # non-blocking mode
+                    port=self.device,
+                    baudrate=self.baud,
+                    # bytesize=serial.SEVENBITS,
+                    # parity=serial.PARITY_EVEN,
+                    # stopbits=serial.STOPBITS_ONE
+                )
+                if self.ser.isOpen():
+                    logging.info("port is opened")
+                else:
+                    raise Exception('Port not opened')
+            except IOError as err:
+                logging.error("ERROR opening serial: %s", err)
+        else:
             logging.info('Opening Serial Port: %s', self.device)
-            self.ser = serial.Serial(
-                timeout=0, # non-blocking mode
-                port=self.device,
-                baudrate=self.baud,
-                # bytesize=serial.SEVENBITS,
-                # parity=serial.PARITY_EVEN,
-                # stopbits=serial.STOPBITS_ONE
-            )
-            if self.ser.isOpen():
-                logging.info("port is opened")
-            else:
-                raise Exception('Port not opened')
-        except IOError as err:
-            logging.error("ERROR opening serial: %s", err)
+
 
 ''' Thread controlling SocketServer '''
 class ServerWorker(Thread):

@@ -4,6 +4,7 @@
 # Whitelist only these
 !main.py
 !controller.py
+!defaults_custom.h
 !Makefile
 !.gitignore
 !.pylintrc
