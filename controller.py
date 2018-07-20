@@ -105,7 +105,8 @@ class DeviceWorker(Thread):
                     #         logging.info('resp: %s', response)
                     #         serialRead = True
                 count += 1
-                time.sleep(1.5)
+                # Pause while the machine moves to the specified position
+                time.sleep(gcode.calc_pause)
                 if init != False:
                     init = False
 
@@ -144,7 +145,7 @@ class SerialWorker(Thread):
         self.currentline = ()
         return
 
-    def run(self): #, queue):
+    def run(self):
         while not self.cancelled:
             while self.ser.isOpen():
                 # Check if there is anything in the queue; blocking makes this unreliable?
@@ -178,6 +179,9 @@ class SerialWorker(Thread):
     def write(self, data_in):
         if not self.args.simulate:
             self.ser.write(data_in)
+
+    def gcode_exec(self, gcode_object):
+        self.write('{}\n'.format(gcode_object.code).encode())
 
     def serial_status(self):
         return self.ser.isOpen()
@@ -261,6 +265,8 @@ class Gcode():
         self.feed = coordArray[3]
         self.gcode = ''
         self.gencode()
+        # TODO: Replace this value with something loaded from an INI; this is a hardcoded firmware value
+        self.acceleration = 200 # // deg/sec^2 (deg/sec/sec)
 
     def gencode(self):
         gcode_a = []
@@ -276,6 +282,40 @@ class Gcode():
     @property
     def code(self):
         return self.gcode
+
+    @property
+    def calc_pause(self):
+        # T = (v-u)/A
+        accel_time = Fraction((self.feed / 60) / self.acceleration)
+        # D - 1/2 A * T ^ 2
+        accel_travel_dist = Fraction(0.5 * self.acceleration * accel_time**2)
+        accel_travel_dist_total = Fraction(accel_travel_dist * 2)
+        # TODO: This is only using one axis at a time; make sure we wait for the longest move to complete
+        middle_dist = {
+            'x': Fraction(abs(self.x_dist) - accel_travel_dist_total),
+            'y': Fraction(abs(self.y_dist) - accel_travel_dist_total)
+        }
+        # T = D / V
+        middle_time = {
+            'x': middle_dist['x'] / (self.feed / 60),
+            'y': middle_dist['y'] / (self.feed / 60)
+        }
+        total_time = {
+            'x': middle_time['x'] + (accel_time * 2),
+            'y': middle_time['y'] + (accel_time * 2)
+            }
+        print_obj = {
+            'accel_time': round(float(accel_time), 3),
+            'accel_travel_dist': round(float(accel_travel_dist), 3),
+            'accel_travel_dist_total': round(float(accel_travel_dist_total), 3),
+            'middle_dist': round(float(middle_dist['x']), 3),
+            'middle_time': round(float(middle_time['x']), 3),
+            'total_time_x': round(float(total_time['x']), 3),
+            'total_time_y': round(float(total_time['y']), 3)
+        }
+        print(print_obj)
+        # Return the largest value from total_time dict
+        return total_time[max(total_time, key=total_time.get)]
 
 # class MyServer(socketserver.TCPServer):
 
