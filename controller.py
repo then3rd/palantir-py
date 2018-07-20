@@ -8,14 +8,16 @@ import serial
 
 ''' Thread controlling device motion (and data capture?) '''
 class DeviceWorker(Thread):
-    def __init__(self, q_serial_in, x_range=0, y_range=0, ratio=(4, 3), quality=4, order=('y', 'x')):
+    def __init__(self, args, q_serial_in, q_serial_out, x_range=0, y_range=0, ratio=(4, 3), quality=4, order=('y', 'x')):
         super().__init__()
         self.name = __class__.__name__
         self.q_serial_in = q_serial_in
+        self.q_serial_out = q_serial_out
         self.daemon = False
         self.active = False
         self.cancelled = False
 
+        self.args = args
         self.quality = quality
         self.order = order
 
@@ -54,6 +56,7 @@ class DeviceWorker(Thread):
             count = 0
             pri = self.order[0]
             sec = self.order[1]
+            gcode = Gcode(['G1', 0, 0, 4000])
             while self.active:
                 if complete:
                     logging.debug('Complete! Sampled %s points.', count)
@@ -61,7 +64,9 @@ class DeviceWorker(Thread):
                     self.active = False
                     break
                 # Do hackrf sampling here
-                logging.debug('Sampling at %s, %s, %s...', round(float(self.cur_pos['x']), 4), round(float(self.cur_pos['y']), 4), round(float(self.cur_dir['y']), 4))
+                logging.debug('Sampling at last %s', gcode.code)
+                # Use this info later to index the recorded data in th database:
+                # logging.debug('Sampling at %s, %s, %s...', round(float(self.cur_pos['x']), 4), round(float(self.cur_pos['y']), 4), round(float(self.cur_dir['y']), 4))
                 # The first loop is special, don't do these things
                 if init is False:
                     if self.cur_pos[pri] == self.range_max[pri] and self.cur_pos[sec] == self.range_max[sec]:
@@ -85,7 +90,20 @@ class DeviceWorker(Thread):
                     gcode = Gcode(['G1', self.cur_pos[sec], self.cur_pos[pri], 6000])
                 if pri == 'x':
                     gcode = Gcode(['G1', self.cur_pos[pri], self.cur_pos[sec], 6000])
+
+                # Execute the gcodee
                 self.gcode_exec(gcode)
+
+                if not self.args.simulate:
+                    # Wait for serial device to respond
+                    while self.q_serial_out.get() != 'ok':
+                        pass
+                    # serialRead = False
+                    # while serialRead is not True:
+                    #     response = self.q_serial_out.get()
+                    #     if response == 'ok':
+                    #         logging.info('resp: %s', response)
+                    #         serialRead = True
                 count += 1
                 time.sleep(1.5)
                 if init != False:
@@ -93,7 +111,7 @@ class DeviceWorker(Thread):
 
     def gcode_exec(self, gcode):
         # Place gcode into queue to be executed by SerialWorker
-        logging.debug('put: \'%s\'', gcode.code)
+        logging.debug('put: (%s)', gcode.code)
         self.q_serial_in.put(gcode.code)
 
     def cancel(self):
@@ -110,10 +128,11 @@ class DeviceWorker(Thread):
 
 ''' Thread for controlling, reading, and writing to a serial device '''
 class SerialWorker(Thread):
-    def __init__(self, args, q_serial_in, device, baud):
+    def __init__(self, args, q_serial_in, q_serial_out, device, baud):
         super().__init__()
         self.name = __class__.__name__
         self.q_serial_in = q_serial_in
+        self.q_serial_out = q_serial_out
         self.daemon = True
         self.cancelled = False
 
@@ -130,7 +149,7 @@ class SerialWorker(Thread):
             while self.ser.isOpen():
                 # Check if there is anything in the queue; blocking makes this unreliable?
                 if self.q_serial_in.qsize() > 0:
-                    gcode = self.q_serial_in.get(block=False)
+                    gcode = self.q_serial_in.get_nowait()
                     logging.info('get: %s', gcode)
                     if self.args.simulate:
                         logging.info('write -> %s', gcode)
@@ -141,6 +160,7 @@ class SerialWorker(Thread):
                 grbl_out = self.ser.readline()
                 if grbl_out:
                     logging.info('serial> %s', grbl_out.strip().decode())
+                    self.q_serial_out.put(grbl_out.strip().decode())
                 else:
                     time.sleep(0.1)
 

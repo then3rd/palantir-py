@@ -44,15 +44,13 @@ def main(arguments):
     if args.device:
         # Start SerialWorker queue and thread
         q_serial_in = Queue()
-        serial_worker = SerialWorker(args, q_serial_in, args.device, args.baud)
+        q_serial_out = Queue()
+        serial_worker = SerialWorker(args, q_serial_in, q_serial_out, args.device, args.baud)
         serial_worker.start()
 
         # Start DeviceWorker thread
-        device_worker = DeviceWorker(q_serial_in, x_range=90, ratio=(4, 3), quality=1, order=('x', 'y'))
+        device_worker = DeviceWorker(args, q_serial_in, q_serial_out, x_range=90, ratio=(4, 2), quality=2, order=('x', 'y'))
         device_worker.start()
-
-        # Join queue
-        q_serial_in.join()
 
         # Initialize serial connection
         serial_worker.activate()
